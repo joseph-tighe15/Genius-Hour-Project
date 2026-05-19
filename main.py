@@ -35,11 +35,16 @@ while True:
     os.system('cls' if os.name == 'nt' else 'clear')
     recomendedWord = ""
     nextChar = text[-1]
-    while nextChar != " ":
+    i = 0
+    while nextChar != " " and i < 10:
+        i+=1
         nextChar = PredictNext(nextChar)
         recomendedWord += nextChar
     recomendedWord = recomendedWord[0:]
     print(text.split(" ")[-1]+recomendedWord)
     print(text)
-    char = getch.getch()
-    text += char
+    char = getch.getch().replace("\x7f", "\b")
+    if char != "\b":
+        text += char
+    else:
+        text = text[:-1]
