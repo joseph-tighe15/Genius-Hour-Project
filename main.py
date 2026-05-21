@@ -32,6 +32,7 @@ files = [path + f for f in os.listdir(path) if os.path.isfile(os.path.join(path,
 for passage in files:
     with open(passage, 'r', encoding='utf-8') as file:
         content = file.read().replace("\n", "")
+        content = content.replace(".", ". ")
         while "  " in content:
             content = content.replace("  ", " ")
 
