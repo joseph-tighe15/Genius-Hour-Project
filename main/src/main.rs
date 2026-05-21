@@ -1,8 +1,24 @@
-use std::fs;
+use std::{fs};
 use std::collections::HashMap;
 use rand::prelude::*;
 use console::{Term, Key};
+use std::io::{self, Write};
 
+fn clear_terminal() {
+    // \x1B[2J: Clears the screen
+    // \x1B[1;1H: Moves cursor to row 1, column 1
+    print!("\x1B[2J\x1B[1;1H");
+    println!("");
+}
+fn last_word(s: &str) -> &str {
+    let words: Vec<&str>;
+    if s.is_empty() || s.ends_with(" ") {
+        words = Vec::new();
+    } else {
+        words = s.split_whitespace().collect();
+    }
+    words.last().unwrap_or(&"")
+}
 fn random_number() -> f64 {
     let mut rng = rand::rng(); // In rand 0.9+, use rand::rng()
     
@@ -51,8 +67,15 @@ fn predict_next_with_fallback(before: &[HashMap<char, HashMap<String, usize>>], 
     }
     ' '
 }
-fn predict_next_word(before: &[HashMap<char, HashMap<String, usize>>], context: &str, temperature: f64) -> String {
+fn predict_next_word(before: &[HashMap<char, HashMap<String, usize>>], raw: &str, temperature: f64) -> String {
     let mut output = String::new();
+    let mut context = raw.replace("\n", " ");
+    context = remove_non_ascii(&context);
+    context.retain(|c| !c.is_ascii_punctuation());
+    context = context.to_lowercase();
+    while context.contains("  ") {
+        context = context.replace("  ", " ");
+    }
     for _ in 0..500 {
         // Implementation for predicting the next word
         let next_char = predict_next_with_fallback(before, &(context.to_string() + &output), temperature);
@@ -63,8 +86,15 @@ fn predict_next_word(before: &[HashMap<char, HashMap<String, usize>>], context: 
     }
     output
 }
-fn predict_next_paragraph(before: &[HashMap<char, HashMap<String, usize>>], context: &str, temperature: f64) -> String {
+fn predict_next_paragraph(before: &[HashMap<char, HashMap<String, usize>>], raw: &str, temperature: f64) -> String {
     let mut output = String::new();
+    let mut context = raw.replace("\n", " ");
+    context = remove_non_ascii(&context);
+    context.retain(|c| !c.is_ascii_punctuation());
+    context = context.to_lowercase();
+    while context.contains("  ") {
+        context = context.replace("  ", " ");
+    }
     for _ in 0..500 {
         // Implementation for predicting the next word
         let next_char = predict_next_with_fallback(before, &(context.to_string() + &output), temperature);
@@ -93,16 +123,30 @@ fn main() -> std::io::Result<()> {
     let entries = fs::read_dir("../text/")?;
     let mut before_list = Vec::new();
     println!("training stage started");
-    for entry in entries {
-        let entry = entry?;
+    for entry_res in entries {
+        let entry = match entry_res {
+            Ok(e) => e,
+            Err(err) => {
+                eprintln!("skipping unreadable directory entry: {}", err);
+                continue;
+            }
+        };
         println!("starting training on {}", entry.file_name().to_string_lossy());
         let path = entry.path();
         
-        // Filter to only print files (excluding subdirectories)
+        // Filter to only process files (excluding subdirectories)
         if path.is_file() {
-            let mut content = fs::read_to_string(&path)?.replace("\n", " ");
+            let raw = match fs::read_to_string(&path) {
+                Ok(s) => s,
+                Err(err) => {
+                    eprintln!("skipping file {}: {}", path.display(), err);
+                    continue;
+                }
+            };
+            let mut content = raw.replace("\n", " ");
             content = remove_non_ascii(&content);
-            content = content.replace(".", ". ");
+            content.retain(|c| !c.is_ascii_punctuation());
+            content = content.to_lowercase();
             while content.contains("  ") {
                 content = content.replace("  ", " ");
             }
@@ -111,7 +155,8 @@ fn main() -> std::io::Result<()> {
             }
         }
     }
-    println!("finished training");/*
+    println!("finished training");
+    println!("before_list entries: {}", before_list.len());/*
     let mut text = String::from("which w");
     for _ in 0..500 {
         text.push(predict_next_with_fallback(&before_list, &text, 10.0));
@@ -126,17 +171,39 @@ fn main() -> std::io::Result<()> {
             real_mode = true;
         }
     }
+    print!("\x1b[?25l"); // Hide
+    io::stdout().flush().unwrap();
     loop {
         let next;
+        clear_terminal();
         if real_mode {
-            next = predict_next_word(&before_list, &text, 15.0);
-            
+            next = predict_next_word(&before_list, &text, 0.0);
+            let mut next2 = predict_next_word(&before_list, &text, 15.0);
+            let mut next3 = predict_next_word(&before_list, &text, 50.0);
+            for _ in 0..3 {
+                if next2 == next {
+                    next2 = predict_next_word(&before_list, &text, 15.0);
+                }
+            }
+            for _ in 0..3 {
+                if next3 == next || next3 == next2 {
+                    next3 = predict_next_word(&before_list, &text, 50.0);
+                }
+            }
+            print!("{}{}", last_word(&text), next);
+            if next != next2 {
+                print!("  {}{}", last_word(&text), next2);
+            }
+            if next3 != next2 && next3 != next {
+                print!("  {}{}", last_word(&text), next3);
+            } 
+            println!("");
         } else {
             next = predict_next_paragraph(&before_list, &text, 15.0);
             
+        println!("  {}{}", last_word(&text), next);
         }
-        println!("{}", next);
-        println!("{}", text);
+        println!("{}█", text);
 
 
         match stdout.read_key()? {
